@@ -23,6 +23,8 @@ function App() {
   const filterInputRefs = useRef([]);
   const labelInputRefs = useRef([]);
 
+  const layerListRef = useRef(null); 
+
   useEffect(() => {
     defineCustomElements(window);
 
@@ -196,26 +198,45 @@ function App() {
 
     map.addMany([layer1, layer2]);
 
-    const layerList = new LayerList({
-      view: view,
-      container: document.getElementById("layerListDiv"),
-      listItemCreatedFunction: (event) => {
-        const item = event.item;
-        item.actionsSections = [
-          [
-            {
-              title: "Select",
-              className: "esri-icon-layers",
-              id: "select-layer",
-            },
-            {
-              title: "Edit Symbol",
-              className: "esri-icon-edit",
-              id: "edit-renderer",
-            },
-          ],
-        ];
-      },
+    view.when(() => {
+      const layerList = new LayerList({
+        view: view,
+        container: document.getElementById("layerListDiv"),
+        listItemCreatedFunction: (event) => {
+          const item = event.item;
+          item.actionsSections = [
+            [
+              {
+                title: "Select",
+                className: "esri-icon-layers",
+                id: "select-layer",
+              },
+              {
+                title: "Edit Symbol",
+                className: "esri-icon-edit",
+                id: "edit-renderer",
+              },
+            ],
+          ];
+        },
+      });
+      layerListRef.current = layerList;
+
+      layerList.on("trigger-action", (event) => {
+        if (event.action.id === "select-layer") {
+          const selectedLayer = event.item.layer;
+          console.log(`Selected Layer: ${selectedLayer.title}`);
+          setSelectedLayer(selectedLayer);
+          updateFeatureTable(selectedLayer);
+          updateLegend(selectedLayer);
+        }
+        if (event.action.id === "edit-renderer") {
+          const selectedLayer = event.item.layer;
+          setSelectedLayer(selectedLayer);
+          showRendererEditor(selectedLayer);
+          setActiveRightPanel("edit-renderer-panel");
+        }
+      });
     });
 
     const featureTableDiv = document.getElementById("featureTableDiv");
@@ -240,6 +261,16 @@ function App() {
     const legend = new Legend({
       view: view,
       container: document.getElementById("legendDiv"),
+      layerInfos: [
+        {
+          layer: layer1,
+          title: "Thermal Hotspots",
+        },
+        {
+          layer: layer2,
+          title: "USA Cities",
+        },
+      ],
     });
 
     const updateLegend = (layer) => {
@@ -267,21 +298,6 @@ function App() {
       });
     });
 
-    layerList.on("trigger-action", (event) => {
-      if (event.action.id === "select-layer") {
-        const selectedLayer = event.item.layer;
-        console.log(`Selected Layer: ${selectedLayer.title}`);
-        setSelectedLayer(selectedLayer);
-        updateFeatureTable(selectedLayer);
-        updateLegend(selectedLayer);
-      }
-      if (event.action.id === "edit-renderer") {
-        const selectedLayer = event.item.layer;
-        setSelectedLayer(selectedLayer);
-        showRendererEditor(selectedLayer);
-        setActiveRightPanel("edit-renderer-panel");
-      }
-    });
 
     const showRendererEditor = (layer) => {
       const rendererEditorDiv = document.getElementById("rendererEditorDiv");
