@@ -6,6 +6,10 @@ import FeatureLayer from "@arcgis/core/layers/FeatureLayer";
 import LayerList from "@arcgis/core/widgets/LayerList";
 import FeatureTable from "@arcgis/core/widgets/FeatureTable";
 import Legend from "@arcgis/core/widgets/Legend";
+import Graphic from "@arcgis/core/Graphic";
+import DistanceMeasurement2D from "@arcgis/core/widgets/DistanceMeasurement2D";
+import Popup from "@arcgis/core/widgets/Popup.js";
+
 import "./App.css";
 import "@esri/calcite-components/dist/components/calcite-action-bar";
 import "@esri/calcite-components/dist/components/calcite-action";
@@ -18,15 +22,26 @@ function App() {
   const [filters, setFilters] = useState([
     { field: null, value: "", condition: "=" },
   ]);
-  const [labels, setLabels] = useState([{ field: "", filter: "", style: { color: "black", fontSize: "12px" }, placement: "above-center" }]);
+  const [labels, setLabels] = useState([
+    {
+      field: "",
+      filter: "",
+      style: { color: "black", fontSize: "12px" },
+      placement: "above-center",
+    },
+  ]);
+  const [measureActive, setMeasureActive] = useState(false);
 
   const filterInputRefs = useRef([]);
   const labelInputRefs = useRef([]);
+  const layerListRef = useRef(null);
+  const measureWidgetRef = useRef(null);
 
-  const layerListRef = useRef(null); 
+  const viewRef = useRef(null);
 
   useEffect(() => {
     defineCustomElements(window);
+    const controller = new AbortController();
 
     const map = new Map({
       basemap: "streets-vector",
@@ -37,13 +52,19 @@ function App() {
       map: map,
       zoom: 3,
       center: [-100, 38],
-      popup: {
-        dockEnabled: false,
+      popupEnabled: true,
+      popup: new Popup({
+        dockEnabled: true,
         highlightEnabled: true,
-      },
+        dockOptions: {
+          buttonEnabled: true,
+          breakpoint: false,
+        },
+      }),
     });
 
     view.ui.move("zoom", "bottom-right");
+    viewRef.current = view;
 
     const layer1 = new FeatureLayer({
       url: "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/Satellite_VIIRS_Thermal_Hotspots_and_Fire_Activity/FeatureServer/0",
@@ -196,6 +217,22 @@ function App() {
       },
     });
 
+    layer1
+      .when(() => {
+        console.log("Layer 1 loaded.");
+      })
+      .catch((error) => {
+        console.error("Layer 1 failed to load:", error);
+      });
+
+    layer2
+      .when(() => {
+        console.log("Layer 2 loaded.");
+      })
+      .catch((error) => {
+        console.error("Layer 2 failed to load:", error);
+      });
+
     map.addMany([layer1, layer2]);
 
     view.when(() => {
@@ -253,9 +290,16 @@ function App() {
           layerDropdown: true,
         },
       });
-      featureTable.layer = layer;
-      featureTable.refresh();
-      featureTableDiv.style.display = "block";
+      if (layer.createQuery) {
+        const query = layer.createQuery();
+        const results = await layer.queryFeatures(query);
+        featureTable.layer = layer;
+        featureTable.features = results.features;
+        featureTable.refresh();
+        featureTableDiv.style.display = "block";
+      } else {
+        console.error("createQuery fonksiyonu bu katmanda mevcut değil.");
+      }
     };
 
     const legend = new Legend({
@@ -297,7 +341,6 @@ function App() {
         }
       });
     });
-
 
     const showRendererEditor = (layer) => {
       const rendererEditorDiv = document.getElementById("rendererEditorDiv");
@@ -442,11 +485,100 @@ function App() {
     };
 
     return () => {
+      controller.abort();
       if (view) {
         view.destroy();
       }
+      if (measureWidgetRef.current) {
+        measureWidgetRef.current.destroy(); // Ölçüm widget'ını temizle
+      }
+      view.graphics.removeAll(); // Tüm grafikleri temizle
+      view.destroy(); // Harita görünümünü temizle
     };
   }, []);
+
+  const handleToolSelection = (tool) => {
+    const view = viewRef.current;
+    if (!view) return;
+  
+    setActiveLeftPanel("");
+    setActiveRightPanel("");
+  
+    // Önceki Click Eventlerini Kaldır
+    if (viewRef.current.clickHandler) {
+      viewRef.current.clickHandler.remove();
+      viewRef.current.clickHandler = null;
+    }
+  
+    view.popup.close();
+    view.graphics.removeAll();
+  
+    if (tool === "measure") {
+      if (measureWidgetRef.current) {
+        measureWidgetRef.current.viewModel.clear();
+        measureWidgetRef.current.destroy();
+        measureWidgetRef.current = null;
+        setMeasureActive(false);
+      } else {
+        const measurementWidget = new DistanceMeasurement2D({
+          view: view,
+        });
+        view.ui.add(measurementWidget, "top-right");
+        measureWidgetRef.current = measurementWidget;
+        setMeasureActive(true);
+      }
+    } else if (tool === "coordinates") {
+      const clickHandler = view.on("click", (event) => {
+        // Eventi hemen durdur
+        event.stopPropagation(); //Event'in ArcGIS tarafından iptal edilmesini engelleek için.
+        event.preventDefault(); // Sağ tık olaylarını devre dışı bırak.
+  
+        view.graphics.removeAll();
+        if (!event.mapPoint) return;
+  
+        const point = {
+          type: "point",
+          longitude: event.mapPoint.longitude,
+          latitude: event.mapPoint.latitude,
+        };
+  
+        const graphic = new Graphic({
+          geometry: point,
+          symbol: {
+            type: "simple-marker",
+            color: "orange",
+            size: "12px",
+            outline: {
+              color: "white",
+              width: 1,
+            },
+          },
+          popupTemplate: {
+            title: "Koordinatlar",
+            content: `Longitude: ${point.longitude.toFixed(
+              4
+            )}, Latitude: ${point.latitude.toFixed(4)}`,
+          },
+        });
+  
+        view.graphics.add(graphic);
+  
+        // Popup zorla açılıyor
+        view.popup.open({
+          title: "Koordinatlar",
+          location: event.mapPoint,
+          content: `Enlem: ${event.mapPoint.latitude.toFixed(6)}<br>Boylam: ${event.mapPoint.longitude.toFixed(6)}`,
+        });
+  
+        view.popup.visible = true;
+        view.popup.autoOpenEnabled = true;
+      });
+  
+      // Event'i ref'e kaydet
+      viewRef.current.clickHandler = clickHandler; 
+    }
+  };
+  
 
   const handleLeftActionClick = (panelId) => {
     setActiveLeftPanel(panelId === activeLeftPanel ? "" : panelId);
@@ -591,7 +723,11 @@ function App() {
         <h3>Stiller</h3>
         {availableStyles.length > 0 ? (
           availableStyles.map((style, index) => (
-            <button className={"style-opt-button"} key={index} onClick={() => applyStyle(style)}>
+            <button
+              className={"style-opt-button"}
+              key={index}
+              onClick={() => applyStyle(style)}
+            >
               {style}
             </button>
           ))
@@ -659,7 +795,7 @@ function App() {
     };
 
     const getFilterFields = (layer) => {
-      if (!layer) return [];
+      if (!layer || !layer.fields) return [];
       return layer.fields.map((field) => ({
         name: field.name,
         type: field.type,
@@ -734,19 +870,23 @@ function App() {
             )}
           </div>
         ))}
-        <button className="filter-add-btn" onClick={addFilter}>Filtre Ekle</button>
-        <button className="filter-apply-btn" onClick={applyFilters}>Filtreleri Uygula</button>
+        <button className="filter-add-btn" onClick={addFilter}>
+          Filtre Ekle
+        </button>
+        <button className="filter-apply-btn" onClick={applyFilters}>
+          Filtreleri Uygula
+        </button>
       </div>
     );
   };
 
   const initialLabel = {
-    field: "", 
-    filter: "", 
-    style: { color: "black", fontSize: "12px" }, 
+    field: "",
+    filter: "",
+    style: { color: "black", fontSize: "12px" },
     placement: "above-center",
   };
-  
+
   const LabelsPanel = ({ selectedLayer, labels, setLabels, onLabelUpdate }) => {
     useEffect(() => {
       labelInputRefs.current.forEach((ref) => {
@@ -755,24 +895,24 @@ function App() {
         }
       });
     }, [labels]);
-   
+
     const handleAddLabel = () => {
       setLabels([...labels, { ...initialLabel }]);
     };
-  
+
     const handleRemoveLabel = (index) => {
       const newLabels = labels.filter((_, i) => i !== index);
       setLabels(newLabels);
     };
-  
+
     const handleLabelChange = (index, key, value) => {
       const newLabels = [...labels];
       newLabels[index][key] = value;
       setLabels(newLabels);
     };
-  
+
     const handleApplyLabels = () => {
-      if (selectedLayer) {
+      if (selectedLayer && selectedLayer.fields) {
         const labelClasses = labels.map((label) => ({
           labelExpressionInfo: { expression: `$feature.${label.field}` },
           labelPlacement: label.placement,
@@ -783,13 +923,17 @@ function App() {
           },
           where: label.filter,
         }));
-  
+
         selectedLayer.labelingInfo = labelClasses;
         selectedLayer.labelsVisible = true;
         onLabelUpdate(selectedLayer);
       }
     };
-  
+
+    if (!selectedLayer || !selectedLayer.fields) {
+      return <div>Etiketler için bir katman seçin.</div>;
+    }
+
     return (
       <div className="labels-panel">
         <h3>Etiketler</h3>
@@ -799,7 +943,9 @@ function App() {
               <label>Etiket Alanı:</label>
               <select
                 value={label.field}
-                onChange={(e) => handleLabelChange(index, "field", e.target.value)}
+                onChange={(e) =>
+                  handleLabelChange(index, "field", e.target.value)
+                }
               >
                 <option value="">Seçiniz</option>
                 {selectedLayer?.fields.map((field, i) => (
@@ -815,7 +961,9 @@ function App() {
                 ref={(el) => (labelInputRefs.current[index] = el)}
                 type="text"
                 value={label.filter}
-                onChange={(e) => handleLabelChange(index, "filter", e.target.value)}
+                onChange={(e) =>
+                  handleLabelChange(index, "filter", e.target.value)
+                }
                 placeholder="Örnek: POP2000 > 100000"
               />
             </div>
@@ -847,7 +995,9 @@ function App() {
               <label>Etiket Yerleşimi:</label>
               <select
                 value={label.placement}
-                onChange={(e) => handleLabelChange(index, "placement", e.target.value)}
+                onChange={(e) =>
+                  handleLabelChange(index, "placement", e.target.value)
+                }
               >
                 <option value="above-center">Yukarıda Ortada</option>
                 <option value="above-left">Yukarıda Solda</option>
@@ -860,7 +1010,9 @@ function App() {
                 <option value="center-right">Ortada Sağda</option>
               </select>
             </div>
-            <button onClick={() => handleRemoveLabel(index)}>Etiketi Sil</button>
+            <button onClick={() => handleRemoveLabel(index)}>
+              Etiketi Sil
+            </button>
           </div>
         ))}
         <button onClick={handleAddLabel}>Yeni Etiket Ekle</button>
@@ -871,7 +1023,7 @@ function App() {
 
   const updateMapLabels = (layer) => {
     if (layer && layer.labelingInfo) {
-      layer.refresh(); 
+      layer.refresh();
     }
   };
 
@@ -948,6 +1100,13 @@ function App() {
           id="labels"
           active={activeRightPanel === "labels-panel"}
           onClick={() => handleRightActionClick("labels-panel")}
+        ></calcite-action>
+        <calcite-action
+          icon="measure"
+          text="Harita Araçları"
+          id="map-tools"
+          active={activeRightPanel === "map-tools-panel"}
+          onClick={() => handleRightActionClick("map-tools-panel")}
         ></calcite-action>
       </calcite-action-bar>
 
@@ -1057,10 +1216,38 @@ function App() {
           }`}
         >
           <div className="panel-content">
-          <LabelsPanel selectedLayer={selectedLayer}
-            labels={labels}
-            setLabels={setLabels}
-            onLabelUpdate={updateMapLabels} />
+            <LabelsPanel
+              selectedLayer={selectedLayer}
+              labels={labels}
+              setLabels={setLabels}
+              onLabelUpdate={updateMapLabels}
+            />
+          </div>
+        </div>
+        <div
+          id="map-tools-panel"
+          className={`panel right-panel ${
+            activeRightPanel === "map-tools-panel" ? "active" : ""
+          }`}
+        >
+          <div className="panel-content">
+            <h3>Harita Araçları</h3>
+            <button
+              className="tool-button"
+              onClick={() => handleToolSelection("measure")}
+            >
+              Ölçüm
+            </button>
+            <button
+              className="tool-button"
+              onClick={() => handleToolSelection("coordinates")}
+            >
+              Konum
+            </button>
+            <div
+              id="mapViewDiv"
+              style={{ height: "100vh", width: "100%" }}
+            ></div>
           </div>
         </div>
       </div>
