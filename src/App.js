@@ -8,7 +8,19 @@ import FeatureTable from "@arcgis/core/widgets/FeatureTable";
 import Legend from "@arcgis/core/widgets/Legend";
 import Graphic from "@arcgis/core/Graphic";
 import DistanceMeasurement2D from "@arcgis/core/widgets/DistanceMeasurement2D";
+import AreaMeasurement2D from "@arcgis/core/widgets/AreaMeasurement2D";
 import Popup from "@arcgis/core/widgets/Popup.js";
+import Sketch from "@arcgis/core/widgets/Sketch";
+import GraphicsLayer from "@arcgis/core/layers/GraphicsLayer";
+import Bookmarks from "@arcgis/core/widgets/Bookmarks";
+import BasemapGallery from "@arcgis/core/widgets/BasemapGallery";
+import Home from "@arcgis/core/widgets/Home";
+import Search from "@arcgis/core/widgets/Search";
+import SceneView from "@arcgis/core/views/SceneView";
+import Locate from "@arcgis/core/widgets/Locate";
+import ScaleBar from "@arcgis/core/widgets/ScaleBar";
+import * as projection from "@arcgis/core/geometry/projection";
+import * as geometryEngine from "@arcgis/core/geometry/geometryEngine";
 
 import "./App.css";
 import "@esri/calcite-components/dist/components/calcite-action-bar";
@@ -30,14 +42,25 @@ function App() {
       placement: "above-center",
     },
   ]);
-  const [measureActive, setMeasureActive] = useState(false);
+
+  const [layers, setLayers] = useState([]);
+  const [isLayerModalOpen, setIsLayerModalOpen] = useState(false);
+  const [layerUrl, setLayerUrl] = useState("");
+  const [layerTitle, setLayerTitle] = useState("");
+  const [activeMeasureTool, setActiveMeasureTool] = useState("");
+  const [is3D, setIs3D] = useState(false);
+  const [markerGraphics, setMarkerGraphics] = useState([]);
+  const [isMarkerMode, setIsMarkerMode] = useState(false);
 
   const filterInputRefs = useRef([]);
   const labelInputRefs = useRef([]);
   const layerListRef = useRef(null);
   const measureWidgetRef = useRef(null);
-
   const viewRef = useRef(null);
+  const bookmarksRef = useRef(null);
+  const basemapGalleryRef = useRef(null);
+  const markerLayerRef = useRef(null);
+  const selectedMarkerRef = useRef(null);
 
   useEffect(() => {
     defineCustomElements(window);
@@ -45,31 +68,63 @@ function App() {
 
     const map = new Map({
       basemap: "streets-vector",
+      ground: is3D ? "world-elevation" : null,
     });
 
-    const view = new MapView({
-      container: "mapViewDiv",
-      map: map,
-      zoom: 3,
-      center: [-100, 38],
-      popupEnabled: true,
-      popup: new Popup({
-        dockEnabled: true,
-        highlightEnabled: true,
-        dockOptions: {
-          buttonEnabled: true,
-          breakpoint: false,
-        },
-      }),
-    });
+    const view = is3D
+      ? new SceneView({
+          container: "mapViewDiv",
+          map,
+          camera: {
+            position: {
+              longitude: -100,
+              latitude: 38,
+              z: 2500,
+            },
+            tilt: 60,
+          },
+          popup: new Popup({
+            dockEnabled: true,
+            highlightEnabled: true,
+            dockOptions: {
+              buttonEnabled: true,
+              breakpoint: false,
+            },
+          }),
+        })
+      : new MapView({
+          container: "mapViewDiv",
+          map,
+          zoom: 3,
+          center: [-100, 38],
+          popupEnabled: true,
+          popup: new Popup({
+            dockEnabled: true,
+            highlightEnabled: true,
+            dockOptions: {
+              buttonEnabled: true,
+              breakpoint: false,
+            },
+          }),
+        });
 
     view.ui.move("zoom", "bottom-right");
-    viewRef.current = view;
+
+    const homeWidget = new Home({
+      view: view,
+    });
+    view.ui.add(homeWidget, "bottom-right");
+    const searchWidget = new Search({
+      view: view,
+      //includeDefaultSources: true,
+      state: "disabled",
+    });
+    view.ui.add(searchWidget, "bottom-right");
 
     const layer1 = new FeatureLayer({
       url: "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/Satellite_VIIRS_Thermal_Hotspots_and_Fire_Activity/FeatureServer/0",
       title: "Thermal Hotspots",
-      outFields: ["event_type"],
+      outFields: ["*"],
       popupTemplate: {
         title: "Thermal Hotspot & Fire Activity",
         content: `
@@ -235,43 +290,145 @@ function App() {
 
     map.addMany([layer1, layer2]);
 
-    view.when(() => {
-      const layerList = new LayerList({
-        view: view,
-        container: document.getElementById("layerListDiv"),
-        listItemCreatedFunction: (event) => {
-          const item = event.item;
-          item.actionsSections = [
-            [
-              {
-                title: "Select",
-                className: "esri-icon-layers",
-                id: "select-layer",
-              },
-              {
-                title: "Edit Symbol",
-                className: "esri-icon-edit",
-                id: "edit-renderer",
-              },
-            ],
-          ];
-        },
-      });
-      layerListRef.current = layerList;
+    viewRef.current = view;
+    const viewWidgets = (view) => {
+      const layerListDiv = document.getElementById("layerListDiv");
 
-      layerList.on("trigger-action", (event) => {
-        if (event.action.id === "select-layer") {
+      if (layerListRef.current) {
+        layerListRef.current.view = view;
+      } else {
+        const layerList = new LayerList({
+          view,
+          container: layerListDiv,
+          dragEnabled: true,
+          listItemCreatedFunction: (event) => {
+            const item = event.item;
+            item.actionsSections = [
+              [
+                {
+                  title: "Select",
+                  className: "esri-icon-layers",
+                  id: "select-layer",
+                },
+                {
+                  title: "Edit Symbol",
+                  className: "esri-icon-edit",
+                  id: "edit-renderer",
+                },
+                {
+                  title: "Remove Layer",
+                  className: "esri-icon-close",
+                  id: "remove-layer",
+                },
+              ],
+            ];
+          },
+        });
+
+        layerList.on("trigger-action", (event) => {
           const selectedLayer = event.item.layer;
-          console.log(`Selected Layer: ${selectedLayer.title}`);
-          setSelectedLayer(selectedLayer);
-          updateFeatureTable(selectedLayer);
-          updateLegend(selectedLayer);
-        }
-        if (event.action.id === "edit-renderer") {
-          const selectedLayer = event.item.layer;
-          setSelectedLayer(selectedLayer);
-          showRendererEditor(selectedLayer);
-          setActiveRightPanel("edit-renderer-panel");
+
+          if (event.action.id === "select-layer") {
+            setSelectedLayer(selectedLayer);
+            updateFeatureTable(selectedLayer);
+            updateLegend(selectedLayer);
+          }
+
+          if (event.action.id === "edit-renderer") {
+            setSelectedLayer(selectedLayer);
+            showRendererEditor(selectedLayer);
+            setActiveRightPanel("edit-renderer-panel");
+          }
+
+          if (event.action.id === "remove-layer") {
+            view.map.remove(selectedLayer);
+          }
+        });
+
+        layerListRef.current = layerList;
+      }
+
+      const bookmarksDiv = document.getElementById("bookmarksDiv");
+
+      if (bookmarksRef.current) {
+        bookmarksRef.current.view = view;
+      } else {
+        const bookmarks = new Bookmarks({
+          view,
+          container: bookmarksDiv,
+          editingEnabled: true,
+        });
+        bookmarksRef.current = bookmarks;
+      }
+
+      const basemapDiv = document.getElementById("basemapDiv");
+
+      if (basemapGalleryRef.current) {
+        basemapGalleryRef.current.view = view;
+      } else {
+        const basemapGallery = new BasemapGallery({
+          view,
+          container: basemapDiv,
+        });
+        basemapGalleryRef.current = basemapGallery;
+      }
+
+      const locateWidget = new Locate({
+        view: viewRef.current,
+      });
+      viewRef.current.ui.add(locateWidget, {
+        position: "bottom-right",
+      });
+
+      const scaleBar = new ScaleBar({
+        view: viewRef.current,
+        unit: "metric",
+      });
+      viewRef.current.ui.add(scaleBar, {
+        position: "bottom-left",
+      });
+    };
+
+    view.when(() => {
+      viewWidgets(view);
+
+      const markerLayer = new GraphicsLayer();
+      view.map.add(markerLayer);
+      markerLayerRef.current = markerLayer;
+
+      if (view.popup?.on) {
+        // 2D MapView
+        view.popup.on("trigger-action", (event) => {
+          if (event.action.id === "delete-marker") {
+            const graphic = view.popup.selectedFeature;
+            if (graphic && markerLayerRef.current.graphics.includes(graphic)) {
+              markerLayerRef.current.remove(graphic);
+              view.popup.close();
+            }
+          }
+        });
+      } else if (view.popup?.viewModel?.on) {
+        // 3D SceneView
+        view.popup.viewModel.on("trigger-action", (event) => {
+          if (event.action.id === "delete-marker") {
+            const graphic = event.target.selectedFeature; 
+            if (graphic && markerLayerRef.current.graphics.includes(graphic)) {
+              markerLayerRef.current.remove(graphic);
+              view.popup.close();
+            }
+          }
+        });
+      }
+
+      view.popup.on("trigger-action", (event) => {
+        const selectedFeature = view.popup.selectedFeature;
+
+        if (
+          event.action.id === "delete-buffer" &&
+          selectedFeature?.attributes?.buffer
+        ) {
+          markerLayerRef.current.remove(selectedFeature);
+          view.popup.close();
         }
       });
     });
@@ -329,15 +486,37 @@ function App() {
 
     view.on("click", (event) => {
       view.hitTest(event).then((response) => {
-        const results = response.results;
-        if (results.length > 0) {
-          const layerHit = results.find((result) => result.layer);
-          if (layerHit) {
-            console.log(`Seçilen katman: ${layerHit.layer.title}`);
-            setSelectedLayer(layerHit.layer);
-            updateFeatureTable(layerHit.layer);
-            updateLegend(layerHit.layer);
+        const markerResult = response.results.find(
+          (result) => result.graphic?.layer === markerLayerRef.current
+        );
+
+        if (markerResult) {
+          const graphic = markerResult.graphic;
+
+          if (view.type === "2d") {
+            // 2D: sadece popup göster
+            view.popup.open({
+              location: graphic.geometry,
+              features: [graphic],
+            });
+          } else if (view.type === "3d") {
+            // 3D: SceneView için viewModel üzerinden aç
+            view.popup.viewModel.selectedFeature = graphic;
+            view.popup.viewModel.open({
+              location: graphic.geometry,
+              features: [graphic],
+            });
           }
+
+          return;
+        }
+
+        const layerHit = response.results.find((result) => result.layer);
+        if (layerHit) {
+          console.log(`Seçilen katman: ${layerHit.layer.title}`);
+          setSelectedLayer(layerHit.layer);
+          updateFeatureTable(layerHit.layer);
+          updateLegend(layerHit.layer);
         }
       });
     });
@@ -490,68 +669,130 @@ function App() {
         view.destroy();
       }
       if (measureWidgetRef.current) {
-        measureWidgetRef.current.destroy(); // Ölçüm widget'ını temizle
+        measureWidgetRef.current.destroy();
       }
-      view.graphics.removeAll(); // Tüm grafikleri temizle
-      view.destroy(); // Harita görünümünü temizle
+      view.graphics.removeAll();
+      view.destroy();
     };
-  }, []);
+  }, [is3D]);
 
-  const handleToolSelection = (tool) => {
+  const addLayer = async () => {
+    if (!layerUrl.trim()) {
+      alert("Lütfen geçerli bir URL girin!");
+      return;
+    }
+    const newLayer = new FeatureLayer({ url: layerUrl });
+    await newLayer.load();
+    newLayer.title = layerTitle?.trim() || newLayer.title || "Yeni Katman";
+
+    try {
+      await newLayer.load();
+      newLayer.title = layerTitle || newLayer.title || "Yeni Katman";
+      viewRef.current.map.add(newLayer);
+      setLayers((prevLayers) => [...prevLayers, newLayer]);
+      setIsLayerModalOpen(false);
+      setLayerUrl("");
+      setLayerTitle("");
+    } catch (error) {
+      alert("Katman yüklenirken hata oluştu. Lütfen geçerli bir URL girin.");
+      console.error("Katman yükleme hatası:", error);
+    }
+
+    if (!newLayer.popupTemplate) {
+      const fields = newLayer.fields.map((field) => {
+        return {
+          label: field.alias || field.name,
+          fieldName: field.name,
+        };
+      });
+
+      newLayer.popupTemplate = {
+        title: layerTitle,
+        content: [
+          {
+            type: "fields",
+            fieldInfos: fields,
+          },
+        ],
+      };
+    }
+  };
+
+  const openLayerModal = () => {
+    setLayerUrl("");
+    setLayerTitle("");
+    setIsLayerModalOpen(true);
+  };
+
+  const closeActiveTool = () => {
     const view = viewRef.current;
-    if (!view) return;
-  
-    setActiveLeftPanel("");
-    setActiveRightPanel("");
-  
-    // Önceki Click Eventlerini Kaldır
+
+    if (measureWidgetRef.current) {
+      measureWidgetRef.current.viewModel.clear();
+      view.ui.remove(measureWidgetRef.current);
+      measureWidgetRef.current.destroy();
+      measureWidgetRef.current = null;
+    }
+
     if (viewRef.current.clickHandler) {
       viewRef.current.clickHandler.remove();
       viewRef.current.clickHandler = null;
     }
-  
-    view.popup.close();
-    view.graphics.removeAll();
-  
-    if (tool === "measure") {
-      if (measureWidgetRef.current) {
-        measureWidgetRef.current.viewModel.clear();
-        measureWidgetRef.current.destroy();
-        measureWidgetRef.current = null;
-        setMeasureActive(false);
-      } else {
-        const measurementWidget = new DistanceMeasurement2D({
-          view: view,
-        });
-        view.ui.add(measurementWidget, "top-right");
-        measureWidgetRef.current = measurementWidget;
-        setMeasureActive(true);
-      }
+
+    if (viewRef.current.sketch) {
+      viewRef.current.sketch.destroy();
+      viewRef.current.sketch = null;
+    }
+
+    setActiveMeasureTool(null);
+  };
+
+  const handleToolSelection = (tool) => {
+    const view = viewRef.current;
+    if (!view) return;
+
+    setActiveLeftPanel("");
+    setActiveRightPanel("");
+
+    if (activeMeasureTool === tool) {
+      closeActiveTool();
+      return;
+    }
+
+    closeActiveTool();
+
+    let newWidget;
+    if (tool === "measure-distance") {
+      newWidget = new DistanceMeasurement2D({ view: view });
+    } else if (tool === "measure-area") {
+      newWidget = new AreaMeasurement2D({ view: view });
+    }
+
+    if (newWidget) {
+      view.ui.add(newWidget, "top-right");
+      measureWidgetRef.current = newWidget;
+      setActiveMeasureTool(tool);
     } else if (tool === "coordinates") {
       const clickHandler = view.on("click", (event) => {
-        // Eventi hemen durdur
-        event.stopPropagation(); //Event'in ArcGIS tarafından iptal edilmesini engelleek için.
-        event.preventDefault(); // Sağ tık olaylarını devre dışı bırak.
-  
+        event.stopPropagation();
+        event.preventDefault();
+
         view.graphics.removeAll();
         if (!event.mapPoint) return;
-  
+
         const point = {
           type: "point",
           longitude: event.mapPoint.longitude,
           latitude: event.mapPoint.latitude,
         };
-  
+
         const graphic = new Graphic({
           geometry: point,
           symbol: {
             type: "simple-marker",
             color: "orange",
             size: "12px",
-            outline: {
-              color: "white",
-              width: 1,
-            },
+            outline: { color: "white", width: 1 },
           },
           popupTemplate: {
             title: "Koordinatlar",
@@ -560,25 +801,179 @@ function App() {
             )}, Latitude: ${point.latitude.toFixed(4)}`,
           },
         });
-  
+
         view.graphics.add(graphic);
-  
-        // Popup zorla açılıyor
+
         view.popup.open({
           title: "Koordinatlar",
           location: event.mapPoint,
-          content: `Enlem: ${event.mapPoint.latitude.toFixed(6)}<br>Boylam: ${event.mapPoint.longitude.toFixed(6)}`,
+          content: `Enlem: ${event.mapPoint.latitude.toFixed(
+            6
+          )}<br>Boylam: ${event.mapPoint.longitude.toFixed(6)}`,
         });
-  
+
         view.popup.visible = true;
         view.popup.autoOpenEnabled = true;
       });
-  
-      // Event'i ref'e kaydet
-      viewRef.current.clickHandler = clickHandler; 
+
+      viewRef.current.clickHandler = clickHandler;
+      setActiveMeasureTool("coordinates");
+    } else if (tool === "draw") {
+      const graphicsLayer = new GraphicsLayer();
+      view.map.add(graphicsLayer);
+
+      const sketch = new Sketch({
+        layer: graphicsLayer,
+        view: view,
+        creationMode: "continuous",
+        layout: "vertical",
+        updateOnGraphicClick: true,
+      });
+      view.ui.add(sketch, "top-right");
+      viewRef.current.sketch = sketch;
+      setActiveMeasureTool("draw");
     }
   };
-  
+
+  const enableMarkerAddMode = () => {
+    const view = viewRef.current;
+    if (!view) return;
+
+    if (isMarkerMode) {
+      if (view.clickHandler) {
+        view.clickHandler.remove();
+        view.clickHandler = null;
+      }
+      setIsMarkerMode(false);
+      setActiveMeasureTool(null);
+      document.getElementById("mapViewDiv").classList.remove("add-marker-mode");
+      return;
+    }
+
+    closeActiveTool();
+    setActiveMeasureTool("add-marker");
+    setIsMarkerMode(true);
+    document.getElementById("mapViewDiv").classList.add("add-marker-mode");
+
+    const clickHandler = view.on("click", (event) => {
+      event.stopPropagation();
+      event.preventDefault();
+
+      const point = {
+        type: "point",
+        longitude: event.mapPoint.longitude,
+        latitude: event.mapPoint.latitude,
+      };
+
+      const marker = new Graphic({
+        geometry: point,
+        symbol: {
+          type: "picture-marker",
+          url: "https://static.arcgis.com/images/Symbols/Shapes/RedPin1LargeB.png",
+          width: "24px",
+          height: "24px",
+        },
+        popupTemplate: {
+          title: "Marker",
+          content: `Longitude: ${point.longitude.toFixed(
+            4
+          )}, Latitude: ${point.latitude.toFixed(4)}`,
+          actions: [
+            {
+              title: "Marker'ı Sil",
+              id: "delete-marker",
+              className: "esri-icon-trash",
+            },
+          ],
+        },
+      });
+
+      markerLayerRef.current.add(marker);
+      setMarkerGraphics((prev) => [...prev, marker]);
+
+      selectedMarkerRef.current = marker;
+    });
+    viewRef.current.clickHandler = clickHandler;
+  };
+
+  const performBufferAnalysis = async (view, markerLayer) => {
+    const bufferDistance = parseFloat(
+      document.getElementById("bufferDistanceInput").value
+    );
+    if (isNaN(bufferDistance) || bufferDistance <= 0) {
+      alert("Lütfen geçerli bir buffer mesafesi girin.");
+      return;
+    }
+
+    if (!markerLayer.graphics.length) {
+      alert("Önce haritaya bir marker ekleyin.");
+      return;
+    }
+
+    const marker = markerLayer.graphics.getItemAt(
+      markerLayer.graphics.length - 1
+    );
+
+    await projection.load();
+
+    const projectedGeometry = projection.project(marker.geometry, {
+      wkid: 3857, // Web Mercator (metrik sistem)
+    });
+
+    const bufferGeometry = geometryEngine.buffer(
+      projectedGeometry,
+      bufferDistance * 1000,
+      "meters"
+    );
+
+    const finalBufferGeometry = projection.project(bufferGeometry, {
+      wkid: 4326,
+    });
+
+    const bufferGraphic = new Graphic({
+      geometry: finalBufferGeometry,
+      symbol: {
+        type: "simple-fill",
+        color: [150, 150, 200, 0.4],
+        outline: {
+          color: [50, 50, 150],
+          width: 2,
+        },
+      },
+      attributes: { buffer: true },
+      popupTemplate: {
+        title: "Buffer Alanı",
+        content: "Bu, seçilen marker etrafındaki buffer alanıdır.",
+        actions: [
+          {
+            title: "Buffer'ı Sil",
+            id: "delete-buffer",
+            className: "esri-icon-trash",
+          },
+        ],
+      },
+    });
+
+    markerLayer.graphics.forEach((graphic) => {
+      if (graphic.attributes?.buffer) {
+        markerLayer.remove(graphic);
+      }
+    });
+
+    markerLayer.add(bufferGraphic);
+    
+    const markersInsideBuffer = markerLayer.graphics.filter((graphic) => {
+      if (graphic === bufferGraphic || !graphic.geometry) return false;
+      const projectedGraphic = projection.project(graphic.geometry, {
+        wkid: 3857,
+      });
+      return geometryEngine.contains(bufferGeometry, projectedGraphic);
+    });
+
+    alert(
+      `Bu buffer alanı içinde ${markersInsideBuffer.length} marker bulunuyor.`
+    );
+  };
 
   const handleLeftActionClick = (panelId) => {
     setActiveLeftPanel(panelId === activeLeftPanel ? "" : panelId);
@@ -592,6 +987,23 @@ function App() {
     setTimeout(() => {
       window.dispatchEvent(new Event("resize"));
     }, 300);
+  };
+
+  const handleMapExport = () => {
+    const view = viewRef.current;
+    if (!view) return;
+
+    view
+      .takeScreenshot()
+      .then((screenshot) => {
+        const link = document.createElement("a");
+        link.href = screenshot.dataUrl;
+        link.download = "harita-gorunumu.png";
+        link.click();
+      })
+      .catch((error) => {
+        console.error("Harita görüntüsü alınamadı:", error);
+      });
   };
 
   const StyleOptions = ({ selectedLayer }) => {
@@ -1027,6 +1439,67 @@ function App() {
     }
   };
 
+  const PopupEditor = ({ selectedLayer }) => {
+    const [popupTitle, setPopupTitle] = useState(
+      selectedLayer.popupTemplate?.title || selectedLayer.title || "Pop-up"
+    );
+    const [selectedFields, setSelectedFields] = useState(
+      selectedLayer?.fields?.map((f) => ({
+        name: f.name,
+        label: f.alias || f.name,
+        visible: false,
+      })) || []
+    );
+
+    const toggleField = (index) => {
+      const newFields = [...selectedFields];
+      newFields[index].visible = !newFields[index].visible;
+      setSelectedFields(newFields);
+    };
+
+    const applyPopup = () => {
+      const visibleFields = selectedFields.filter((f) => f.visible);
+
+      const contentHtml = visibleFields
+        .map((field) => `<b>${field.label}:</b> {${field.name}}`)
+        .join("<br>");
+
+      selectedLayer.popupTemplate = {
+        title: popupTitle,
+        content: contentHtml,
+        fieldInfos: visibleFields.map((f) => ({
+          fieldName: f.name,
+          label: f.label,
+        })),
+      };
+
+      selectedLayer.refresh();
+    };
+
+    return (
+      <div className="popup-editor">
+        <label>Başlık:</label>
+        <input
+          type="text"
+          value={popupTitle}
+          onChange={(e) => setPopupTitle(e.target.value)}
+        />
+        <h4>Gösterilecek Alanlar:</h4>
+        {selectedFields.map((field, i) => (
+          <div key={i}>
+            <input
+              type="checkbox"
+              checked={field.visible}
+              onChange={() => toggleField(i)}
+            />
+            <label>{field.label}</label>
+          </div>
+        ))}
+        <button onClick={applyPopup}>Pop-up'ı Uygula</button>
+      </div>
+    );
+  };
+
   return (
     <div className="App">
       {/* Soldaki action bar */}
@@ -1038,24 +1511,44 @@ function App() {
       >
         <calcite-action
           icon="layers"
-          text="Layers"
+          text="Katmanlar"
           id="layers"
           active={activeLeftPanel === "layers-panel"}
           onClick={() => handleLeftActionClick("layers-panel")}
         ></calcite-action>
         <calcite-action
           icon="table"
-          text="Table"
+          text="Tablolar"
           id="table"
           active={activeLeftPanel === "table-panel"}
           onClick={() => handleLeftActionClick("table-panel")}
         ></calcite-action>
         <calcite-action
           icon="legend"
-          text="Legend"
+          text="Lejant"
           id="legend"
           active={activeLeftPanel === "legend-panel"}
           onClick={() => handleLeftActionClick("legend-panel")}
+        ></calcite-action>
+        <calcite-action
+          icon="bookmark"
+          text="Yer İşaretleri"
+          id="bookmarks"
+          active={activeLeftPanel === "bookmarks-panel"}
+          onClick={() => handleLeftActionClick("bookmarks-panel")}
+        ></calcite-action>
+        <calcite-action
+          icon="basemap"
+          text="Altlık Harita"
+          id="basemap"
+          active={activeLeftPanel === "basemap-panel"}
+          onClick={() => handleLeftActionClick("basemap-panel")}
+        ></calcite-action>
+        <calcite-action
+          icon="save"
+          text="Harita Görünümünü Kaydet"
+          id="save-map"
+          onClick={() => handleMapExport()}
         ></calcite-action>
       </calcite-action-bar>
 
@@ -1068,28 +1561,28 @@ function App() {
       >
         <calcite-action
           icon="sliders-horizontal"
-          text="Properties"
+          text="Özellikler"
           id="properties"
           active={activeRightPanel === "properties-panel"}
           onClick={() => handleRightActionClick("properties-panel")}
         ></calcite-action>
         <calcite-action
           icon="palette"
-          text="Style"
+          text="Stiller"
           id="style"
           active={activeRightPanel === "style-panel"}
           onClick={() => handleRightActionClick("style-panel")}
         ></calcite-action>
         <calcite-action
           icon="pencil-mark"
-          text="Edit Renderer"
+          text="Sembol Düzenleme"
           id="edit-renderer"
           active={activeRightPanel === "edit-renderer-panel"}
           onClick={() => handleRightActionClick("edit-renderer-panel")}
         ></calcite-action>
         <calcite-action
           icon="filter"
-          text="Filter"
+          text="Filtreler"
           id="filter"
           active={activeRightPanel === "filter-panel"}
           onClick={() => handleRightActionClick("filter-panel")}
@@ -1108,6 +1601,43 @@ function App() {
           active={activeRightPanel === "map-tools-panel"}
           onClick={() => handleRightActionClick("map-tools-panel")}
         ></calcite-action>
+        <calcite-action
+          icon="pencil"
+          text="Çizim Araçları"
+          id="draw"
+          active={activeRightPanel === "draw-panel"}
+          onClick={() => {
+            handleToolSelection("draw");
+            //handleRightActionClick("draw-panel");
+          }}
+        ></calcite-action>
+        <calcite-action
+          icon="popup"
+          text="Pop-up"
+          id="popup-editor"
+          active={activeRightPanel === "popup-editor-panel"}
+          onClick={() => handleRightActionClick("popup-editor-panel")}
+        ></calcite-action>
+        <calcite-action
+          icon={is3D ? "map" : "globe"}
+          text={is3D ? "2D" : "3D"}
+          onClick={() => setIs3D((prev) => !prev)}
+        ></calcite-action>
+        <calcite-action
+          icon="pin"
+          text="Marker Ekle"
+          id="add-marker"
+          active={isMarkerMode}
+          appearance={isMarkerMode ? "transparent" : "solid"}
+          onClick={() => enableMarkerAddMode()}
+        ></calcite-action>
+        <calcite-action
+          icon="polygon"
+          text="Buffer Analizi"
+          id="buffer-analysis"
+          active={activeRightPanel === "buffer-analysis-panel"}
+          onClick={() => handleRightActionClick("buffer-analysis-panel")}
+        ></calcite-action>
       </calcite-action-bar>
 
       <div
@@ -1125,6 +1655,43 @@ function App() {
           }`}
         >
           <div id="layerListDiv" className="panel-content"></div>
+          <calcite-button
+            id="add-layer"
+            onClick={() => {
+              openLayerModal();
+            }}
+          >
+            Katman Ekle
+          </calcite-button>
+          {isLayerModalOpen && (
+            <div className="layer-modal">
+              <h3>Yeni Katman Ekle</h3>
+              <label>Katman URL:</label>
+              <input
+                type="text"
+                value={layerUrl}
+                onChange={(e) => setLayerUrl(e.target.value)}
+                placeholder="Katman URL'sini girin"
+              />
+
+              <label>Katman Adı:</label>
+              <input
+                type="text"
+                value={layerTitle}
+                onChange={(e) => setLayerTitle(e.target.value)}
+                placeholder="Katmanın adını girin"
+              />
+              <button onClick={addLayer} className="add-layer-confirm">
+                Ekle
+              </button>
+              <button
+                onClick={() => setIsLayerModalOpen(false)}
+                className="add-layer-cancel"
+              >
+                İptal
+              </button>
+            </div>
+          )}
         </div>
         <div
           id="table-panel"
@@ -1133,7 +1700,7 @@ function App() {
           }`}
         >
           <div id="featureTableDiv" className="panel-content">
-            <label>Layer is not selected.</label>
+            <label>Herhangi bir katman seçilmedi.</label>
           </div>
         </div>
         <div
@@ -1143,6 +1710,22 @@ function App() {
           }`}
         >
           <div id="legendDiv" className="panel-content"></div>
+        </div>
+        <div
+          id="bookmarks-panel"
+          className={`panel left-panel ${
+            activeLeftPanel === "bookmarks-panel" ? "active" : ""
+          }`}
+        >
+          <div id="bookmarksDiv" className="panel-content"></div>
+        </div>
+        <div
+          id="basemap-panel"
+          className={`panel left-panel ${
+            activeLeftPanel === "basemap-panel" ? "active" : ""
+          }`}
+        >
+          <div id="basemapDiv" className="panel-content"></div>
         </div>
 
         {/* Sağdaki paneller */}
@@ -1163,7 +1746,7 @@ function App() {
                 <pre>{JSON.stringify(selectedLayer.renderer, null, 2)}</pre>
               </div>
             ) : (
-              <p>No layer selected.</p>
+              <p>Herhangi bir katman seçilmedi.</p>
             )}
           </div>
         </div>
@@ -1232,22 +1815,66 @@ function App() {
         >
           <div className="panel-content">
             <h3>Harita Araçları</h3>
+            <div className="map-tools-div">
+              <calcite-button
+                className="tool-button"
+                onClick={() => handleToolSelection("measure-distance")}
+              >
+                Mesafe Ölçümü
+              </calcite-button>
+              <calcite-button
+                className="tool-button"
+                onClick={() => handleToolSelection("measure-area")}
+              >
+                Alan Ölçümü
+              </calcite-button>
+              <calcite-button
+                icon="arrow"
+                className="tool-button"
+                onClick={() => handleToolSelection("coordinates")}
+              >
+                Konum
+              </calcite-button>
+            </div>
+          </div>
+        </div>
+        <div
+          id="popup-editor-panel"
+          className={`panel right-panel ${
+            activeRightPanel === "popup-editor-panel" ? "active" : ""
+          }`}
+        >
+          <div className="panel-content">
+            <h3>Pop-up Düzenleme</h3>
+            {selectedLayer ? (
+              <PopupEditor selectedLayer={selectedLayer} />
+            ) : (
+              <p>Pop-up düzenlemek için bir katman seçin.</p>
+            )}
+          </div>
+        </div>
+        <div
+          id="buffer-analysis-panel"
+          className={`panel right-panel ${
+            activeRightPanel === "buffer-analysis-panel" ? "active" : ""
+          }`}
+        >
+          <div className="panel-content">
+            <h3>Buffer (Çevresel) Analiz</h3>
+            <label>Buffer Mesafesi</label>
+            <input
+              type="number"
+              id="bufferDistanceInput"
+              placeholder="km"
+              min="1"
+            />
             <button
-              className="tool-button"
-              onClick={() => handleToolSelection("measure")}
+              onClick={() =>
+                performBufferAnalysis(viewRef.current, markerLayerRef.current)
+              }
             >
-              Ölçüm
+              Analizi Başlat
             </button>
-            <button
-              className="tool-button"
-              onClick={() => handleToolSelection("coordinates")}
-            >
-              Konum
-            </button>
-            <div
-              id="mapViewDiv"
-              style={{ height: "100vh", width: "100%" }}
-            ></div>
           </div>
         </div>
       </div>
