@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useRef, useEffect } from "react";
 import FeatureLayer from "@arcgis/core/layers/FeatureLayer";
 
 const AddLayerPanel = ({
@@ -11,16 +11,50 @@ const AddLayerPanel = ({
   viewRef,
   setLayers,
 }) => {
+  const dialogRef = useRef(null);
+  const urlInputRef = useRef(null);
+  const titleInputRef = useRef(null);
+
+  useEffect(() => {
+    if (dialogRef.current) {
+      dialogRef.current.open = isLayerModalOpen;
+    }
+  }, [isLayerModalOpen]);
+
+  useEffect(() => {
+    if (urlInputRef.current) urlInputRef.current.value = layerUrl;
+    if (titleInputRef.current) titleInputRef.current.value = layerTitle;
+  }, [layerUrl, layerTitle]);
+
   const addLayer = async () => {
-    if (!layerUrl.trim()) {
+    const cleanedUrl = layerUrl?.replace(/\s/g, "").trim();
+
+    if (!cleanedUrl) {
       alert("Lütfen geçerli bir URL girin!");
       return;
     }
 
-    const newLayer = new FeatureLayer({ url: layerUrl });
+    try {
+      const parsedUrl = new URL(cleanedUrl);
+      console.log("DEBUG | URL parse OK:", parsedUrl.href);
+    } catch (e) {
+      console.error("DEBUG | URL PARSE ERROR:", e.message);
+      alert("Girilen URL geçerli bir URL formatında değil.");
+      return;
+    }
+
+    if (!viewRef.current || !viewRef.current.map) {
+      alert("Harita henüz hazır değil. Lütfen biraz bekleyip tekrar deneyin.");
+      return;
+    }
+
+    const newLayer = new FeatureLayer({ url: cleanedUrl });
 
     try {
+      console.log("Layer yükleniyor...");
       await newLayer.load();
+      console.log("Layer başarıyla yüklendi:", newLayer);
+
       newLayer.title = layerTitle?.trim() || newLayer.title || "Yeni Katman";
 
       viewRef.current.map.add(newLayer);
@@ -46,7 +80,9 @@ const AddLayerPanel = ({
         };
       }
     } catch (error) {
-      alert("Katman yüklenirken hata oluştu. Lütfen geçerli bir URL girin.");
+      alert(
+        "Katman yüklenemedi. Lütfen URL'nin geçerli bir FeatureLayer adresi olduğundan emin olun."
+      );
       console.error("Katman yükleme hatası:", error);
     }
   };
@@ -54,34 +90,45 @@ const AddLayerPanel = ({
   if (!isLayerModalOpen) return null;
 
   return (
-    <div className="layer-modal">
-      <h3>Yeni Katman Ekle</h3>
-      <label>Katman URL:</label>
-      <input
-        type="text"
-        value={layerUrl}
-        onChange={(e) => setLayerUrl(e.target.value)}
-        placeholder="Katman URL'sini girin"
-      />
-
-      <label>Katman Adı:</label>
-      <input
-        type="text"
-        value={layerTitle}
-        onChange={(e) => setLayerTitle(e.target.value)}
-        placeholder="Katmanın adını girin"
-      />
-
-      <button onClick={addLayer} className="add-layer-confirm">
-        Ekle
-      </button>
-      <button
+    <calcite-dialog
+      open
+      modal
+      heading="Yeni Katman"
+      ref={dialogRef}
+      onCalciteDialogClose={() => setIsLayerModalOpen(false)}
+    >
+      <calcite-label>
+        Katman URL
+        <calcite-input
+          ref={urlInputRef}
+          placeholder="Katman URL'sini girin"
+          onInput={(e) => {
+            const val = e.target.value;
+            console.log("URL değişti:", val);
+            setLayerUrl(val);
+          }}
+        />
+      </calcite-label>
+      <calcite-label>
+        Katman Adı
+        <calcite-input
+          ref={titleInputRef}
+          placeholder="Katmanın adını girin"
+          onInput={(e) => {
+            const val = e.target.value;
+            console.log("Başlık değişti:", val);
+            setLayerTitle(val);
+          }}
+        />
+      </calcite-label>
+      <calcite-button
+        appearance="outline"
         onClick={() => setIsLayerModalOpen(false)}
-        className="add-layer-cancel"
       >
         İptal
-      </button>
-    </div>
+      </calcite-button>
+      <calcite-button onClick={addLayer}>Katman Ekle</calcite-button>
+    </calcite-dialog>
   );
 };
 

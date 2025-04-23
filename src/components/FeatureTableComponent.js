@@ -58,9 +58,10 @@ const FeatureTableComponent = ({ view, selectedLayer }) => {
 
   return (
     <div className="panel-content">
+      <h3>Tablolar</h3>
       {selectedLayer ? (
         <div
-          key={selectedLayer.id} // 🧠 DOM seviyesinde yeniden oluşturma tetikleyici
+          key={selectedLayer.id}
           ref={tableContainerRef}
           className="feature-table-container"
         />

@@ -92,7 +92,6 @@ const StyleOptions = ({ selectedLayer }) => {
         };
         break;
       default:
-        console.log("Unknown style type:", styleType);
     }
 
     selectedLayer.refresh();
@@ -105,13 +104,13 @@ const StyleOptions = ({ selectedLayer }) => {
       <h3>Stiller</h3>
       {availableStyles.length > 0 ? (
         availableStyles.map((style, index) => (
-          <button
+          <calcite-button
             className="style-opt-button"
             key={index}
             onClick={() => applyStyle(style)}
           >
             {style}
-          </button>
+          </calcite-button>
         ))
       ) : (
         <p>Bu katman için herhangi bir stil mevcut değil.</p>

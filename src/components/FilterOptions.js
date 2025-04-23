@@ -1,113 +1,197 @@
-import React, { useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 
-const FilterOptions = ({ selectedLayer, filters, setFilters }) => {
-  const filterInputRefs = useRef([]);
+function FilterOptions({ selectedLayer }) {
+  const [filters, setFilters] = useState([
+    { field: "", operator: "=", value: "" },
+  ]);
+  const [logicOperator, setLogicOperator] = useState("AND");
+  const segmentedControlRef = useRef();
 
   useEffect(() => {
-    filterInputRefs.current = filterInputRefs.current.slice(0, filters.length);
-  }, [filters]);
+    const control = segmentedControlRef.current;
+    if (control) {
+      const handler = (e) => {
+        const value = e.target.selectedItem?.value;
+        console.log("Segmented Control seçimi:", value);
+        setLogicOperator(value);
+      };
+      control.addEventListener("calciteSegmentedControlChange", handler);
+      return () => control.removeEventListener("calciteSegmentedControlChange", handler);
+    }
+  }, []);
 
   const addFilter = () => {
-    setFilters([
-      ...filters,
-      {
-        field: null,
-        value: "",
-        condition: "=",
-      },
-    ]);
+    setFilters((prev) => [...prev, { field: "", operator: "=", value: "" }]);
   };
 
   const removeFilter = (index) => {
     const newFilters = filters.filter((_, i) => i !== index);
     setFilters(newFilters);
-
-    setTimeout(() => {
-      applyFilters(newFilters);
-    }, 0);
+    setTimeout(() => applyFilters(newFilters), 0);
   };
 
-  const updateFilter = (index, key, value) => {
-    const newFilters = [...filters];
-    newFilters[index][key] = value;
-    setFilters(newFilters);
+  const applyFilters = (overrideFilters) => {
+    const currentFilters = Array.isArray(overrideFilters) ? overrideFilters : filters;
+    const validFilters = currentFilters.filter(
+      (f) => f.field && f.operator && f.value !== ""
+    );
+
+    const clauses = validFilters.map((f) => {
+      const fieldInfo = selectedLayer.fields.find(
+        (field) => field.name === f.field
+      );
+      let valueExpr = f.value;
+
+      if (fieldInfo) {
+        const fieldType = fieldInfo.type;
+        if (fieldType === "string" || fieldType === "date") {
+          valueExpr = `'${f.value}'`;
+        }
+      }
+      return `${f.field} ${f.operator} ${valueExpr}`;
+    });
+
+    const definition = clauses.join(` ${logicOperator} `);
+    console.log("Oluşturulan WHERE ifadesi:", definition);
+    console.log("Seçilen bağlaç:", logicOperator);
+
+    selectedLayer.definitionExpression = definition || null;
   };
 
-  const applyFilters = (currentFilters = filters) => {
-    if (!selectedLayer) return;
-
-    const whereClause = currentFilters
-      .filter((filter) => filter.field?.name && filter.value)
-      .map(
-        (filter) => `${filter.field.name} ${filter.condition} '${filter.value}'`
-      )
-      .join(" AND ");
-
-    const tagsClause = Array.isArray(selectedLayer.tags)
-      ? selectedLayer.tags.map((tag) => `tags LIKE '%${tag}%'`).join(" OR ")
-      : "";
-
-    const finalWhere = [whereClause, tagsClause].filter(Boolean).join(" AND ");
-
-    selectedLayer.definitionExpression = finalWhere;
-  };
+  useEffect(() => {
+    filters.forEach((_, i) => {
+      const fieldSelect = document.getElementById(`field-select-${i}`);
+      const opSelect = document.getElementById(`operator-select-${i}`);
+      const valInput = document.getElementById(`value-input-${i}`);
+      if (fieldSelect) {
+        fieldSelect.addEventListener("calciteSelectChange", (event) => {
+          const newValue = event.target.value;
+          setFilters((prev) => {
+            const updated = [...prev];
+            updated[i].field = newValue;
+            return updated;
+          });
+        });
+      }
+      if (opSelect) {
+        opSelect.addEventListener("calciteSelectChange", (event) => {
+          const newValue = event.target.value;
+          setFilters((prev) => {
+            const updated = [...prev];
+            updated[i].operator = newValue;
+            return updated;
+          });
+        });
+      }
+      if (valInput) {
+        valInput.addEventListener("calciteInputInput", (event) => {
+          const newValue = event.target.value;
+          setFilters((prev) => {
+            const updated = [...prev];
+            updated[i].value = newValue;
+            return updated;
+          });
+        });
+      }
+    });
+  }, [filters, selectedLayer]);
 
   return (
-    <div>
+    <calcite-panel heading="Filtre Seçenekleri">
+      <calcite-label layout="inline" style={{ marginBottom: "1rem" }}>
+        Filtreleme Türü:
+        <calcite-segmented-control
+          ref={segmentedControlRef}
+          width="full"
+          value={logicOperator}
+          style={{marginTop:"15px"}}
+        >
+          <calcite-segmented-control-item value="AND">
+            AND
+          </calcite-segmented-control-item>
+          <calcite-segmented-control-item value="OR">
+            OR
+          </calcite-segmented-control-item>
+        </calcite-segmented-control>
+      </calcite-label>
+
       {filters.map((filter, index) => (
-        <div key={index} style={{ marginBottom: "1rem" }}>
-          <label>
+        <calcite-block
+          key={index}
+          heading={`Filtre ${index + 1}`}
+          open
+          collapsible
+        >
+          <calcite-label>
             Alan:
-            <select
-              value={filter.field?.name || ""}
-              onChange={(e) =>
-                updateFilter(
-                  index,
-                  "field",
-                  selectedLayer?.fields?.find((f) => f.name === e.target.value)
-                )
-              }
-            >
-              <option value="">Alan seçin</option>
-              {Array.isArray(selectedLayer?.fields) &&
-                selectedLayer.fields.map((field) => (
-                  <option key={field.name} value={field.name}>
-                    {field.alias || field.name}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <label>
+            <calcite-select id={`field-select-${index}`} value={filter.field}>
+            {(selectedLayer?.fields || []).map((field) => (
+                <calcite-option
+                  key={field.name}
+                  value={field.name}
+                  label={field.alias || field.name}
+                >
+                  {field.alias || field.name}
+                </calcite-option>
+              ))}
+            </calcite-select>
+          </calcite-label>
+          <calcite-label>
             Koşul:
-            <select
-              value={filter.condition}
-              onChange={(e) => updateFilter(index, "condition", e.target.value)}
+            <calcite-select
+              id={`operator-select-${index}`}
+              value={filter.operator}
             >
-              <option value="=">Alanı şu olanlar</option>
-              <option value="<">Alanı şundan küçük olanlar</option>
-              <option value="<=">Alanı şundan küçük veya eşit olanlar</option>
-              <option value=">">Alanı şundan büyük olanlar</option>
-              <option value=">=">Alanı şundan büyük veya eşit olanlar</option>
-            </select>
-          </label>
-          <label>
+              <calcite-option value="=">Alanı şu olanlar</calcite-option>
+              <calcite-option value="<">Alanı şundan küçük olanlar</calcite-option>
+              <calcite-option value="<=">Alanı şundan küçük veya eşit olanlar</calcite-option>
+              <calcite-option value=">">Alanı şundan büyük olanlar</calcite-option>
+              <calcite-option value=">=">Alanı şundan büyük veya eşit olanlar</calcite-option>
+            </calcite-select>
+          </calcite-label>
+          <calcite-label>
             Değer:
-            <input
+            <calcite-input
+              id={`value-input-${index}`}
               type="text"
-              ref={(el) => (filterInputRefs.current[index] = el)}
               value={filter.value}
-              onChange={(e) => updateFilter(index, "value", e.target.value)}
+              placeholder="Değer girin"
             />
-          </label>
-          <button onClick={() => removeFilter(index)}>Kaldır</button>
-        </div>
+          </calcite-label>
+          <calcite-button
+            appearance="outline"
+            color="red"
+            icon-start="minus-circle"
+            scale="s"
+            onClick={() => {
+              removeFilter(index);
+              applyFilters();
+            }}
+          >
+            Kaldır
+          </calcite-button>
+        </calcite-block>
       ))}
-      <calcite-button onClick={addFilter}>Filtre Ekle</calcite-button>
-      <calcite-button appearance="outline" onClick={() => applyFilters()}>
-        Filtreleri Uygula
-      </calcite-button>
-    </div>
+      <div style={{ marginTop: "8px" }}>
+        <calcite-button
+          appearance="outline"
+          icon-start="plus-circle"
+          scale="m"
+          onClick={addFilter}
+        >
+          Filtre Ekle
+        </calcite-button>
+        <calcite-button
+          color="green"
+          scale="m"
+          style={{ marginLeft: "4px" }}
+          onClick={() => applyFilters()}
+        >
+          Filtreleri Uygula
+        </calcite-button>
+      </div>
+    </calcite-panel>
   );
-};
+}
 
 export default FilterOptions;

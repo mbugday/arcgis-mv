@@ -11,7 +11,6 @@ const BookmarksPanel = ({ view, activePanel }) => {
 
     const container = containerRef.current;
 
-    // Önceki icerigi temizle
     container.innerHTML = "";
 
     const widgetDiv = document.createElement("div");
@@ -21,7 +20,10 @@ const BookmarksPanel = ({ view, activePanel }) => {
     const bookmarks = new Bookmarks({
       view,
       container: widgetDiv,
-      editingEnabled: true,
+      visibleElements: {
+        addBookmarkButton: true,
+        editBookmarkButton: true,
+      }
     });
 
     bookmarksRef.current = bookmarks;

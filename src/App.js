@@ -332,7 +332,7 @@ function App() {
         markerLayerRef,
         selectedMarkerRef,
         setSelectedLayer,
-      });      
+      });
     });
 
     return () => {
@@ -418,133 +418,116 @@ function App() {
     <div className="App">
       {/* Soldaki action bar */}
       <calcite-action-bar
-        expandDisabled="false"
-        expanded="false"
         layout="vertical"
+        expanded={false}
         className="left-action-bar"
       >
         <calcite-action
           icon="layers"
           text="Katmanlar"
-          id="layers"
           active={activeLeftPanel === "layers-panel"}
-          onClick={() => handleLeftActionClick("layers-panel")}
-        ></calcite-action>
+          onclick={() => handleLeftActionClick("layers-panel")}
+        />
         <calcite-action
           icon="table"
           text="Tablolar"
-          id="table"
           active={activeLeftPanel === "table-panel"}
-          onClick={() => handleLeftActionClick("table-panel")}
-        ></calcite-action>
+          onclick={() => handleLeftActionClick("table-panel")}
+        />
         <calcite-action
           icon="legend"
           text="Lejant"
-          id="legend"
           active={activeLeftPanel === "legend-panel"}
-          onClick={() => handleLeftActionClick("legend-panel")}
-        ></calcite-action>
+          onclick={() => handleLeftActionClick("legend-panel")}
+        />
         <calcite-action
           icon="bookmark"
           text="Yer İşaretleri"
-          id="bookmarks"
           active={activeLeftPanel === "bookmarks-panel"}
-          onClick={() => handleLeftActionClick("bookmarks-panel")}
-        ></calcite-action>
+          onclick={() => handleLeftActionClick("bookmarks-panel")}
+        />
         <calcite-action
           icon="basemap"
           text="Altlık Harita"
-          id="basemap"
           active={activeLeftPanel === "basemap-panel"}
-          onClick={() => handleLeftActionClick("basemap-panel")}
-        ></calcite-action>
+          onclick={() => handleLeftActionClick("basemap-panel")}
+        />
         <calcite-action
           icon="save"
           text="Harita Görünümünü Kaydet"
-          id="save-map"
-          onClick={() => handleMapExport()}
-        ></calcite-action>
+          onclick={handleMapExport}
+        />
       </calcite-action-bar>
 
       {/* Sağdaki action bar */}
       <calcite-action-bar
-        expandDisabled="false"
-        expanded="false"
         layout="vertical"
+        expanded={false}
         className="right-action-bar"
       >
         <calcite-action
           icon="sliders-horizontal"
           text="Özellikler"
-          id="properties"
           active={activeRightPanel === "properties-panel"}
-          onClick={() => handleRightActionClick("properties-panel")}
-        ></calcite-action>
+          onclick={() => handleRightActionClick("properties-panel")}
+        />
         <calcite-action
           icon="palette"
           text="Stiller"
-          id="style"
           active={activeRightPanel === "style-panel"}
-          onClick={() => handleRightActionClick("style-panel")}
-        ></calcite-action>
+          onclick={() => handleRightActionClick("style-panel")}
+        />
         <calcite-action
           icon="pencil-mark"
           text="Sembol Düzenleme"
-          id="edit-renderer"
           active={activeRightPanel === "edit-renderer-panel"}
-          onClick={() => handleRightActionClick("edit-renderer-panel")}
-        ></calcite-action>
+          onclick={() => handleRightActionClick("edit-renderer-panel")}
+        />
         <calcite-action
           icon="filter"
           text="Filtreler"
-          id="filter"
           active={activeRightPanel === "filter-panel"}
-          onClick={() => handleRightActionClick("filter-panel")}
-        ></calcite-action>
+          onclick={() => handleRightActionClick("filter-panel")}
+        />
         <calcite-action
           icon="tag"
           text="Etiketler"
-          id="labels"
           active={activeRightPanel === "labels-panel"}
-          onClick={() => handleRightActionClick("labels-panel")}
-        ></calcite-action>
+          onclick={() => handleRightActionClick("labels-panel")}
+        />
         <calcite-action
           icon="measure"
           text="Harita Araçları"
-          id="map-tools"
           active={activeRightPanel === "map-tools-panel"}
-          onClick={() => handleRightActionClick("map-tools-panel")}
-        ></calcite-action>
+          onclick={() => handleRightActionClick("map-tools-panel")}
+        />
         <calcite-action
           icon="pencil"
           text="Çizim Araçları"
-          id="draw"
-          onClick={() => handleTool("draw")}
-        ></calcite-action>
+          onclick={() => handleTool("draw")}
+        />
         <calcite-action
           icon="popup"
           text="Pop-up"
-          id="popup-editor"
           active={activeRightPanel === "popup-editor-panel"}
-          onClick={() => handleRightActionClick("popup-editor-panel")}
-        ></calcite-action>
+          onclick={() => handleRightActionClick("popup-editor-panel")}
+        />
         <calcite-action
           icon={is3D ? "map" : "globe"}
           text={is3D ? "2D" : "3D"}
-          onClick={() => {
-            setSelectedLayer(null);
-            setActiveLeftPanel("");
-            setActiveRightPanel("");
-            setIs3D((prev) => !prev);
-          }}
-        ></calcite-action>
+          onclick={() => 
+            {
+              setIs3D((prev) => !prev);
+              setActiveLeftPanel("");     
+              setActiveRightPanel(""); 
+            }}
+        />
         <calcite-action
           icon="pin"
           text="Marker Ekle"
-          id="add-marker"
           active={isMarkerMode}
           appearance={isMarkerMode ? "transparent" : "solid"}
-          onClick={() =>
+          onclick={() =>
             handleMarkerAddMode({
               viewRef,
               markerLayerRef,
@@ -556,7 +539,7 @@ function App() {
               selectedMarkerRef,
             })
           }
-        ></calcite-action>
+        />
       </calcite-action-bar>
 
       <div
