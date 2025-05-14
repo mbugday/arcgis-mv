@@ -1,14 +1,18 @@
 import React, { useEffect, useRef } from "react";
 import FeatureTable from "@arcgis/core/widgets/FeatureTable";
 
-const FeatureTableComponent = ({ view, selectedLayer }) => {
+const FeatureTableComponent = ({ view, selectedLayer}) => {
   const tableContainerRef = useRef(null);
   const tableInstanceRef = useRef(null);
+  const lastLayerRef = useRef(null);
 
   useEffect(() => {
     if (!view || !selectedLayer || !selectedLayer.createQuery) return;
 
     const containerElement = tableContainerRef.current;
+
+    if (lastLayerRef.current === selectedLayer) return;
+    lastLayerRef.current = selectedLayer;
 
     if (tableInstanceRef.current) {
       tableInstanceRef.current.destroy();
@@ -54,11 +58,11 @@ const FeatureTableComponent = ({ view, selectedLayer }) => {
         containerElement.innerHTML = "";
       }
     };
-  }, [view, selectedLayer]); 
+  }, [view, selectedLayer]);
 
   return (
-    <div className="panel-content">
-      <h3>Tablolar</h3>
+    <>
+      <h3 style={{ margin: "20px" }}>Tablolar</h3>
       {selectedLayer ? (
         <div
           key={selectedLayer.id}
@@ -68,7 +72,7 @@ const FeatureTableComponent = ({ view, selectedLayer }) => {
       ) : (
         <p>Herhangi bir katman seçilmedi.</p>
       )}
-    </div>
+    </>
   );
 };
 

@@ -113,16 +113,6 @@
   margin-right: 300px;
 }
 
-.style-opt-button {
-  margin: 5px;
-  padding: 10px 20px;
-  background-color: white;
-  color: black;
-  border: 1px solid black;
-  border-radius: 10px;
-  cursor: pointer;
-}
-
 .renderer-editor {
   background-color: #ffffff;
   padding: 10px;
@@ -154,26 +144,6 @@
   margin-top: 15px;
 }
 
-.filter-add-btn {
-  margin-top: 20px;
-  padding: 10px 20px;
-  background-color: white;
-  color: black;
-  border: 1px solid black;
-  border-radius: 50px;
-  cursor: pointer;
-}
-.filter-apply-btn {
-  margin-top: 20px;
-  padding: 10px 20px;
-  left: 10px;
-  background-color: white;
-  color: black;
-  border: 1px solid black;
-  border-radius: 50px;
-  cursor: pointer;
-}
-
 .filter-group {
   margin-bottom: 20px;
   padding: 10px;
@@ -193,20 +163,6 @@
 
 calcite-segmented-control {
   margin-bottom: 20px;
-}
-
-.remove-filter-btn {
-  margin-top: 20px;
-  padding: 10px 20px;
-  background-color: white;
-  color: black;
-  border: 1px solid #ccc;
-  border-radius: 10px;
-  cursor: pointer;
-}
-
-.remove-filter-btn:hover {
-  background-color: #c82333;
 }
 
 .labels-panel {
@@ -229,31 +185,10 @@ calcite-segmented-control {
   border-radius: 4px;
 }
 
-.labels-panel button {
-  margin-top: 20px;
-  padding: 10px 20px;
-  background-color: white;
-  color: black;
-  border: 1px solid #ccc;
-  border-radius: 50px;
-  cursor: pointer;
-}
-
 .label-group {
   padding: 20px;
   border: 1px solid #dee2e6;
   border-radius: 4px;
-}
-
-.tool-button {
-  margin: 10px;
-  padding: 10px 20px;
-
-  cursor: pointer;
-}
-
-.tool-button:hover {
-  background-color: #f0f0f0;
 }
 
 /**/
@@ -284,31 +219,6 @@ calcite-segmented-control {
   border-radius: 4px;
 }
 
-.add-layer-confirm {
-  background: #007ac2;
-  color: white;
-  border: none;
-  padding: 10px;
-  margin-right: 10px;
-
-  cursor: pointer;
-}
-
-.add-layer-cancel {
-  background: #acacac;
-  color: black;
-  border: none;
-  padding: 10px;
-  cursor: pointer;
-}
-
-.map-tools-div {
-  flex: 1;
-  overflow-y: auto;
-  padding: 20px;
-  flex-direction: row;
-}
-
 .popup-editor {
   display: flex;
   flex-direction: column;
@@ -323,5 +233,21 @@ calcite-segmented-control {
   height: 100%;
   width: 100%;
   overflow: auto;
+  flex: 1;
 }
 
+.bottom-panel {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  height: 300px;
+  background-color: white;
+  border-top: 1px solid #ccc;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.container.bottom-panel-open .map-view {
+  height: calc(100% - 300px); /* Alt panel yüksekliği kadar küçült */
+}

@@ -16,20 +16,22 @@ import "@esri/calcite-components/dist/components/calcite-action";
 import "@esri/calcite-components/dist/calcite/calcite.css";
 
 import SymbolEditorPanel from "./components/SymbolEditorPanel";
+import SymbolEditorUnique from "./components/SymbolEditorUnique";
 import FilterOptions from "./components/FilterOptions";
 import StyleOptions from "./components/StyleOptions";
 import LabelsPanel from "./components/LabelsPanel";
 import PopupEditor from "./components/PopupEditor";
 import AddLayerPanel from "./components/AddLayerPanel";
 import MapToolsPanel from "./components/MapToolsPanel";
-import { handleToolSelection } from "./tools/handleToolSelection";
-import { handleMarkerAddMode } from "./tools/handleMarkerAddMode";
-import { setupMarkerHandlers } from "./tools/setupMarkerHandlers";
 import FeatureTableComponent from "./components/FeatureTableComponent";
 import LayerListComponent from "./components/LayerListComponent";
 import LegendPanel from "./components/LegendPanel";
 import BookmarksPanel from "./components/BookmarksPanel";
 import BasemapGalleryPanel from "./components/BasemapGalleryPanel";
+
+import { handleToolSelection } from "./tools/handleToolSelection";
+import { handleMarkerAddMode } from "./tools/handleMarkerAddMode";
+import { setupMarkerHandlers } from "./tools/setupMarkerHandlers";
 
 function App() {
   const [activeLeftPanel, setActiveLeftPanel] = useState("");
@@ -55,6 +57,7 @@ function App() {
   const [is3D, setIs3D] = useState(false);
   const [markerGraphics, setMarkerGraphics] = useState([]);
   const [isMarkerMode, setIsMarkerMode] = useState(false);
+  const [activeBottomPanel, setActiveBottomPanel] = useState("");
 
   const layerListRef = useRef(null);
   const measureWidgetRef = useRef(null);
@@ -64,6 +67,7 @@ function App() {
 
   const handleLayerSelect = useCallback((layer) => {
     setSelectedLayer(layer);
+    window.selectedLayer = layer;
   }, []);
 
   const handleEditRenderer = useCallback((layer) => {
@@ -306,8 +310,26 @@ function App() {
 
     map.addMany([layer1, layer2]);
 
+    const layer3 = new FeatureLayer({
+      url: "https://sampleserver6.arcgisonline.com/arcgis/rest/services/Census/MapServer/3",
+      title: "USA States",
+      outFields: ["*"],
+      renderer: {
+        type: "simple",
+        symbol: {
+          type: "simple-fill",
+          color: [255, 255, 128, 0.6],
+          outline: {
+            color: [0, 0, 0],
+            width: 1,
+          },
+        },
+      },
+    });
+    map.add(layer3);
+
     viewRef.current = view;
-    const viewWidgets = (view) => {
+    view.when(() => {
       const locateWidget = new Locate({
         view: viewRef.current,
       });
@@ -322,10 +344,35 @@ function App() {
       viewRef.current.ui.add(scaleBar, {
         position: "bottom-left",
       });
-    };
 
-    view.when(() => {
-      viewWidgets(view);
+      const clickHandler = view.on("click", async (event) => {
+        try {
+          const response = await view.hitTest(event);
+          const graphic = response.results.find(
+            (result) => result.graphic?.layer
+          )?.graphic;
+
+          if (graphic) {
+            if (view.type === "2d") {
+              view.popup.open({
+                location: graphic.geometry,
+                features: [graphic],
+              });
+            } else if (view.type === "3d") {
+              view.popup.viewModel.selectedFeature = graphic;
+              view.popup.viewModel.open({
+                location: graphic.geometry,
+                features: [graphic],
+              });
+            }
+            setSelectedLayer(graphic.layer);
+          } else {
+            view.popup.close();
+          }
+        } catch (err) {
+          console.error("Hit test hatası:", err);
+        }
+      });
 
       setupMarkerHandlers({
         view,
@@ -334,6 +381,59 @@ function App() {
         setSelectedLayer,
       });
     });
+
+    // Dinamik url için kullandım: http://localhost:3000/?layerUrl=https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/USGS_Seismic_Data_v1/FeatureServer&layerTitle=Deprem%20Verisi
+    if (viewRef.current) {
+      viewRef.current.when(() => {
+        const params = new URLSearchParams(window.location.search);
+        const layerUrl = params.get("layerUrl");
+        const layerTitle = params.get("layerTitle");
+
+        if (layerUrl) {
+          const safeLayerTitle =
+            typeof layerTitle === "string" ? layerTitle : "Yeni Katman";
+          const newLayer = new FeatureLayer({
+            url: layerUrl,
+            title: safeLayerTitle,
+            outFields: ["*"],
+          });
+
+          newLayer
+            .load()
+            .then(() => {
+              if (!viewRef.current.map.findLayerById(newLayer.id)) {
+                if (!newLayer.popupTemplate) {
+                  const fields = newLayer.fields.map((field) => ({
+                    label: field.alias || field.name,
+                    fieldName: field.name,
+                  }));
+
+                  newLayer.popupTemplate = {
+                    title: newLayer.title,
+                    content: [
+                      {
+                        type: "fields",
+                        fieldInfos: fields,
+                      },
+                    ],
+                  };
+                }
+                viewRef.current.map.add(newLayer);
+                console.log(
+                  "URL'den katman başarıyla eklendi:",
+                  newLayer.title
+                );
+              }
+            })
+            .catch((error) => {
+              console.error("URL'den katman ekleme hatası:", error);
+              alert(
+                "Katman eklenemedi. Lütfen geçerli bir Feature Layer URL'si girin."
+              );
+            });
+        }
+      });
+    }
 
     return () => {
       controller.abort();
@@ -426,31 +526,49 @@ function App() {
           icon="layers"
           text="Katmanlar"
           active={activeLeftPanel === "layers-panel"}
-          onclick={() => handleLeftActionClick("layers-panel")}
+          onclick={() => {
+            handleLeftActionClick("layers-panel");
+            setActiveBottomPanel("");
+          }}
         />
         <calcite-action
           icon="table"
           text="Tablolar"
-          active={activeLeftPanel === "table-panel"}
-          onclick={() => handleLeftActionClick("table-panel")}
+          active={activeBottomPanel === "feature-table-panel"}
+          onclick={() => {
+            setActiveBottomPanel((prev) =>
+              prev === "feature-table-panel" ? "" : "feature-table-panel"
+            );
+            setActiveLeftPanel("");
+            setActiveRightPanel("");
+          }}
         />
         <calcite-action
           icon="legend"
           text="Lejant"
           active={activeLeftPanel === "legend-panel"}
-          onclick={() => handleLeftActionClick("legend-panel")}
+          onclick={() => {
+            handleLeftActionClick("legend-panel");
+            setActiveBottomPanel("");
+          }}
         />
         <calcite-action
           icon="bookmark"
           text="Yer İşaretleri"
           active={activeLeftPanel === "bookmarks-panel"}
-          onclick={() => handleLeftActionClick("bookmarks-panel")}
+          onclick={() => {
+            handleLeftActionClick("bookmarks-panel");
+            setActiveBottomPanel("");
+          }}
         />
         <calcite-action
           icon="basemap"
           text="Altlık Harita"
           active={activeLeftPanel === "basemap-panel"}
-          onclick={() => handleLeftActionClick("basemap-panel")}
+          onclick={() => {
+            handleLeftActionClick("basemap-panel");
+            setActiveBottomPanel("");
+          }}
         />
         <calcite-action
           icon="save"
@@ -469,65 +587,88 @@ function App() {
           icon="sliders-horizontal"
           text="Özellikler"
           active={activeRightPanel === "properties-panel"}
-          onclick={() => handleRightActionClick("properties-panel")}
+          onclick={() => {
+            handleRightActionClick("properties-panel");
+            setActiveBottomPanel("");
+          }}
         />
         <calcite-action
           icon="palette"
           text="Stiller"
           active={activeRightPanel === "style-panel"}
-          onclick={() => handleRightActionClick("style-panel")}
+          onclick={() => {
+            handleRightActionClick("style-panel");
+            setActiveBottomPanel("");
+          }}
         />
         <calcite-action
           icon="pencil-mark"
           text="Sembol Düzenleme"
           active={activeRightPanel === "edit-renderer-panel"}
-          onclick={() => handleRightActionClick("edit-renderer-panel")}
+          onclick={() => {
+            handleRightActionClick("edit-renderer-panel");
+            setActiveBottomPanel("");
+          }}
         />
         <calcite-action
           icon="filter"
           text="Filtreler"
           active={activeRightPanel === "filter-panel"}
-          onclick={() => handleRightActionClick("filter-panel")}
+          onclick={() => {
+            handleRightActionClick("filter-panel");
+            setActiveBottomPanel("");
+          }}
         />
         <calcite-action
           icon="tag"
           text="Etiketler"
           active={activeRightPanel === "labels-panel"}
-          onclick={() => handleRightActionClick("labels-panel")}
+          onclick={() => {
+            handleRightActionClick("labels-panel");
+            setActiveBottomPanel("");
+          }}
         />
         <calcite-action
           icon="measure"
           text="Harita Araçları"
           active={activeRightPanel === "map-tools-panel"}
-          onclick={() => handleRightActionClick("map-tools-panel")}
+          onclick={() => {
+            handleRightActionClick("map-tools-panel");
+            setActiveBottomPanel("");
+          }}
         />
         <calcite-action
           icon="pencil"
           text="Çizim Araçları"
-          onclick={() => handleTool("draw")}
+          onclick={() => {
+            handleTool("draw");
+            setActiveBottomPanel("");
+          }}
         />
         <calcite-action
           icon="popup"
           text="Pop-up"
           active={activeRightPanel === "popup-editor-panel"}
-          onclick={() => handleRightActionClick("popup-editor-panel")}
+          onclick={() => {
+            handleRightActionClick("popup-editor-panel");
+            setActiveBottomPanel("");
+          }}
         />
         <calcite-action
           icon={is3D ? "map" : "globe"}
           text={is3D ? "2D" : "3D"}
-          onclick={() => 
-            {
-              setIs3D((prev) => !prev);
-              setActiveLeftPanel("");     
-              setActiveRightPanel(""); 
-            }}
+          onclick={() => {
+            setIs3D((prev) => !prev);
+            setActiveLeftPanel("");
+            setActiveRightPanel("");
+          }}
         />
         <calcite-action
           icon="pin"
           text="Marker Ekle"
           active={isMarkerMode}
           appearance={isMarkerMode ? "transparent" : "solid"}
-          onclick={() =>
+          onclick={() => {
             handleMarkerAddMode({
               viewRef,
               markerLayerRef,
@@ -537,15 +678,19 @@ function App() {
               closeActiveTool,
               setMarkerGraphics,
               selectedMarkerRef,
-            })
-          }
+            });
+            setActiveBottomPanel("");
+            setActiveLeftPanel("");
+            setActiveRightPanel("");
+          }}
         />
       </calcite-action-bar>
 
       <div
-        className={`container ${activeLeftPanel ? "left-panel-open" : ""} ${
-          activeRightPanel ? "right-panel-open" : ""
-        }`}
+        className={`container 
+    ${activeLeftPanel ? "left-panel-open" : ""} 
+    ${activeRightPanel ? "right-panel-open" : ""} 
+    ${activeBottomPanel === "feature-table-panel" ? "bottom-panel-open" : ""}`}
       >
         <div id="mapViewDiv" className="map-view"></div>
 
@@ -588,17 +733,14 @@ function App() {
             setLayers={setLayers}
           />
         </div>
-        <div
-          id="table-panel"
-          className={`panel left-panel ${
-            activeLeftPanel === "table-panel" ? "active" : ""
-          }`}
-        >
-          <FeatureTableComponent
-            view={viewRef.current}
-            selectedLayer={selectedLayer}
-          />
-        </div>
+        {activeBottomPanel === "feature-table-panel" && (
+          <div id="feature-table-panel" className="bottom-panel active">
+            <FeatureTableComponent
+              view={viewRef.current}
+              selectedLayer={selectedLayer}
+            />
+          </div>
+        )}
         <div
           id="legend-panel"
           className={`panel left-panel ${
@@ -682,7 +824,17 @@ function App() {
           <div className="panel-content">
             <h3>Sembol Düzenleme</h3>
             {selectedLayer ? (
-              <SymbolEditorPanel selectedLayer={selectedLayer} />
+              selectedLayer.renderer?.type === "unique-value" ? (
+                <SymbolEditorUnique
+                  selectedLayer={selectedLayer}
+                  setActiveRightPanel={setActiveRightPanel}
+                />
+              ) : (
+                <SymbolEditorPanel
+                  selectedLayer={selectedLayer}
+                  setActiveRightPanel={setActiveRightPanel}
+                />
+              )
             ) : (
               <p>Katman sembolünü düzenlemek için bir katman seçiniz.</p>
             )}

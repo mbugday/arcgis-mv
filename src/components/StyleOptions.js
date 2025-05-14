@@ -5,26 +5,43 @@ const StyleOptions = ({ selectedLayer }) => {
     if (!layer) return [];
 
     if (layer.title === "Thermal Hotspots") return ["Simple", "Heatmap"];
-    if (layer.title === "USA Cities") return ["Simple", "Class Breaks"];
-    return [];
+    if (layer.title === "USA Cities") return ["Simple", "Class Breaks", "Unique Value"];
+    if (layer.title === "USA States") return ["Simple", "Unique Value"];
+    return ["Simple"];
   };
 
   const applyStyle = (styleType) => {
     if (!selectedLayer) return;
+
+    const geometryType = selectedLayer.geometryType;
+
+    const getSymbolType = () => {
+      if (geometryType === "polygon") return "simple-fill";
+      if (geometryType === "polyline") return "simple-line";
+      return "simple-marker";
+    };
 
     switch (styleType) {
       case "Simple":
         selectedLayer.renderer = {
           type: "simple",
           symbol: {
-            type: "simple-marker",
-            style: "circle",
+            type: getSymbolType(),
             color: "red",
-            size: 8,
-            outline: { color: "white", width: 1 },
+            ...(geometryType === "polygon" && {
+              outline: { color: "white", width: 1 },
+            }),
+            ...(geometryType === "polyline" && {
+              width: 2,
+            }),
+            ...(geometryType === "point" && {
+              size: 8,
+              outline: { color: "white", width: 1 },
+            }),
           },
         };
         break;
+
       case "Heatmap":
         selectedLayer.renderer = {
           type: "heatmap",
@@ -39,6 +56,7 @@ const StyleOptions = ({ selectedLayer }) => {
           minPixelIntensity: 0,
         };
         break;
+
       case "Class Breaks":
         selectedLayer.renderer = {
           type: "class-breaks",
@@ -91,10 +109,33 @@ const StyleOptions = ({ selectedLayer }) => {
           ],
         };
         break;
+
+      case "Unique Value":
+        selectedLayer.renderer = {
+          type: "unique-value",
+          field: "areaname", // küçük harfli field kullanımı
+          defaultSymbol: {
+            type: getSymbolType(),
+            color: [200, 200, 200],
+            ...(geometryType === "polygon" && {
+              outline: { color: [0, 0, 0], width: 1 },
+            }),
+            ...(geometryType === "polyline" && {
+              width: 2,
+            }),
+            ...(geometryType === "point" && {
+              size: 8,
+              outline: { color: [0, 0, 0], width: 1 },
+            }),
+          },
+          uniqueValueInfos: [],
+        };
+        break;
+
       default:
     }
 
-    selectedLayer.refresh();
+    selectedLayer.refresh?.();
   };
 
   const availableStyles = getAvailableStyles(selectedLayer);
